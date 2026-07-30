@@ -8,9 +8,11 @@ Momentum นำตลาด Scanner — Streamlit App v2.1
   3. EMA20 > EMA50
   4. EMA50 > EMA200
   5. ราคายืดจาก EMA20 ไม่เกิน X%  →  (Close - EMA20) / EMA20 <= X%
-  6. RS = (Close ล่าสุด - Close N แท่งก่อน) / Close N แท่งก่อน × 100
-     (คำนวณไว้โชว์เป็นข้อมูลประกอบเท่านั้น — ไม่ได้ใช้จัดอันดับ Top N แล้ว)
-  7. เลือก Top N ที่ยืดจาก EMA เร็ว (Extension) มากที่สุด
+  6. เลือก Top N ที่ยืดจาก EMA เร็ว (Extension) มากที่สุด
+
+หมายเหตุ: เดิมมีเงื่อนไข RS (Relative Strength, N-bar) เป็นตัวจัดอันดับ/ข้อมูลประกอบ
+         ตัดออกทั้งหมดแล้ว (30 ก.ค. 2026) ตามที่ขอ — ไม่คำนวณ ไม่มีคอลัมน์ RS
+         อีกต่อไป เหลือ Extension เป็นตัวจัดอันดับเพียงตัวเดียว
 
 สิ่งที่จงใจ "ไม่ทำ" (อย่าเพิ่มกลับเข้ามาโดยไม่ทดสอบ):
   - ไม่ใช้ ThreadPoolExecutor — yfinance ไม่ thread-safe บน Streamlit Cloud (segfault)
@@ -49,8 +51,8 @@ Momentum นำตลาด Scanner — Streamlit App v2.1
 ──────────────────────────────────────────────────────────────
 บันทึกสาเหตุ: ทำไมต้องตัดแท่งที่ยังไม่ปิดตลาดทิ้ง  (30 ก.ค. 2026)
 ──────────────────────────────────────────────────────────────
-อาการ: กดปุ่ม Scan 2 ครั้งห่างกันไม่กี่นาทีตอนตลาดเปิดอยู่ ได้ Close/RS/
-      Extension ไม่ตรงกัน ทั้งที่เป็นสัญลักษณ์เดียวกันและวันเดียวกัน
+อาการ: กดปุ่ม Scan 2 ครั้งห่างกันไม่กี่นาทีตอนตลาดเปิดอยู่ ได้ Close/Extension
+      ไม่ตรงกัน ทั้งที่เป็นสัญลักษณ์เดียวกันและวันเดียวกัน
 
 สาเหตุ: yf.download(interval="1d") ระหว่างตลาดเปิด จะส่งแท่ง "วันนี้" มาด้วย
        โดย Close ของแท่งนั้นคือราคาล่าสุด ณ ขณะนั้น ไม่ใช่ราคาปิดจริง
@@ -277,7 +279,7 @@ section[data-testid="stSidebar"] {
 
 .row {
     display: grid;
-    grid-template-columns: 42px 88px 190px 1fr 78px 26px;
+    grid-template-columns: 42px 88px 190px 1fr 26px;
     align-items: center;
     gap: 0.7rem;
     padding: 0.7rem 0.6rem;
@@ -351,14 +353,6 @@ section[data-testid="stSidebar"] {
     box-shadow: 0 0 10px rgba(241, 215, 122, 0.45);
 }
 
-.r-rs {
-    font-size: 1rem;
-    font-weight: 600;
-    color: #F1D77A;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-}
-
 .r-go {
     color: #D4AF37;
     opacity: 0;
@@ -368,9 +362,9 @@ section[data-testid="stSidebar"] {
 }
 .row:hover .r-go { opacity: 1; }
 
-/* มือถือ: ยุบแถบ RS ทิ้ง ให้เหลือข้อมูลที่จำเป็น */
+/* มือถือ: ยุบแถบวัดโมเมนตัมทิ้ง ให้เหลือข้อมูลที่จำเป็น */
 @media (max-width: 640px) {
-    .row { grid-template-columns: 34px 70px 1fr 66px; }
+    .row { grid-template-columns: 34px 70px 1fr; }
     .r-bar-wrap, .r-go { display: none; }
 }
 
@@ -490,18 +484,11 @@ with st.sidebar:
         help="ยิ่งน้อย = จับได้ Early มาก (ยังไม่วิ่งไปไกล)"
     )
 
-    st.markdown("**เงื่อนไขที่ 6 — คำนวณ Relative Strength (ข้อมูลประกอบ)**")
-    rs_bars = st.number_input(
-        "นับ RS ย้อนหลังกี่ bars",
-        min_value=5, max_value=60, value=20, step=5,
-        help="20 bars = ~1 เดือน — ใช้แสดงผลประกอบเท่านั้น ไม่ได้ใช้จัดอันดับ Top N แล้ว"
-    )
-
-    st.markdown("**เงื่อนไขที่ 7 — จัดอันดับด้วยระยะห่างจาก EMA (Extension)**")
+    st.markdown("**เงื่อนไขที่ 6 — จัดอันดับด้วยระยะห่างจาก EMA (Extension)**")
     top_n = st.number_input(
         "แสดง Top N ตัวที่ยืดจาก EMA เร็วมากที่สุด",
         min_value=5, max_value=100, value=20, step=5,
-        help="เรียงจากตัวที่ไกลเส้น EMA เร็วที่สุดก่อน (ต้องผ่านเงื่อนไข 1-6 เดิมทุกข้อ)"
+        help="เรียงจากตัวที่ไกลเส้น EMA เร็วที่สุดก่อน (ต้องผ่านเงื่อนไข 1-5 เดิมทุกข้อ)"
     )
 
     st.divider()
@@ -550,11 +537,11 @@ def is_bar_closed(bar_date, symbol: str) -> bool:
 # ══════════════════════════════════════════════════════
 #  SCAN FUNCTION — เงื่อนไข Momentum นำตลาด
 # ══════════════════════════════════════════════════════
-def scan_symbol(symbol, ema_f, ema_m, ema_s, max_ext, rs_n):
+def scan_symbol(symbol, ema_f, ema_m, ema_s, max_ext):
     try:
         df = yf.download(symbol, period="2y", interval="1d",
                          progress=False, auto_adjust=False, actions=False)
-        min_len = ema_s + rs_n + 10
+        min_len = ema_s + 10
         if df is None or len(df) < min_len:
             return None
         if isinstance(df.columns, pd.MultiIndex):
@@ -588,9 +575,6 @@ def scan_symbol(symbol, ema_f, ema_m, ema_s, max_ext, rs_n):
         # .iloc[] ซึ่งอ้างตำแหน่งอยู่แล้ว จึงคงบรรทัดนี้ไว้ตามเดิม (diff น้อยสุด)
         df = df.dropna(subset=["EMA_S"]).reset_index(drop=True)
 
-        if len(df) < rs_n + 1:
-            return None
-
         close_now = float(df["Close"].iloc[-1])
         ema_f_now = float(df["EMA_F"].iloc[-1])
         ema_m_now = float(df["EMA_M"].iloc[-1])
@@ -613,10 +597,6 @@ def scan_symbol(symbol, ema_f, ema_m, ema_s, max_ext, rs_n):
         if extension_pct > max_ext:
             return None
 
-        # ── เงื่อนไขที่ 6: Relative Strength N แท่ง ──
-        close_n_ago = float(df["Close"].iloc[-(rs_n + 1)])
-        rs_pct = (close_now - close_n_ago) / close_n_ago * 100
-
         return {
             "Symbol"          : symbol,
             # ══ [2] ส่งวันที่ของข้อมูลออกไปกับทุกแถว ══
@@ -624,7 +604,6 @@ def scan_symbol(symbol, ema_f, ema_m, ema_s, max_ext, rs_n):
             "Close"           : round(close_now, 2),
             "EMA เร็ว"        : round(ema_f_now, 2),
             "Extension (%)"   : round(extension_pct, 1),
-            "RS (%)"          : round(rs_pct, 1),
             "EMA กลาง"        : round(ema_m_now, 2),
             "EMA ช้า"         : round(ema_s_now, 2),
             "TradingView"     : f"https://www.tradingview.com/chart/?symbol={to_tv_format(symbol)}",
@@ -661,7 +640,7 @@ elif scan_btn and symbols:
         status_text.text(f"⏳ {symbol}...")
         result = scan_symbol(
             symbol, ema_fast, ema_mid, ema_slow,
-            max_extension_pct, rs_bars
+            max_extension_pct
         )
         if result:
             results.append(result)
@@ -716,12 +695,11 @@ if st.session_state.scan_done and st.session_state.scan_results:
         unsafe_allow_html=True,
     )
 
-    # ── เงื่อนไขที่ 7: เรียงตาม Extension มากไปน้อย (ไกลเส้น EMA ที่สุดก่อน) เอา Top N ──
-    # เปลี่ยนจาก RS → Extension (%) ตามที่ปรับ 30 ก.ค. 2026
-    # เงื่อนไขกรอง 1-6 ยังเหมือนเดิมทุกอย่าง แค่สลับตัวที่ใช้ "เรียง" ตอนเลือก Top N
+    # ── เงื่อนไขที่ 6: เรียงตาม Extension มากไปน้อย (ไกลเส้น EMA ที่สุดก่อน) เอา Top N ──
+    # เงื่อนไขกรอง 1-5 ยังเหมือนเดิมทุกอย่าง — Extension เป็นตัวจัดอันดับเพียงตัวเดียวแล้ว
+    # (RS ถูกตัดออกทั้งหมด 30 ก.ค. 2026)
     df_result = df_all.sort_values("Extension (%)", ascending=False).head(int(top_n))
 
-    avg_rs = df_all["RS (%)"].mean()
     avg_ext = df_all["Extension (%)"].mean()
     leader = df_result.iloc[0]
     leader_sym = leader["Symbol"].replace(".BK", "")
@@ -741,11 +719,6 @@ if st.session_state.scan_done and st.session_state.scan_results:
         '</div>'
         '<div class="sum-div"></div>'
         '<div class="sum-item">'
-        '<div class="sum-label">RS เฉลี่ย</div>'
-        f'<div class="sum-value">{avg_rs:+.1f}<span class="sum-unit">%</span></div>'
-        '</div>'
-        '<div class="sum-div"></div>'
-        '<div class="sum-item">'
         '<div class="sum-label">Extension เฉลี่ย</div>'
         f'<div class="sum-value">{avg_ext:+.1f}<span class="sum-unit">%</span></div>'
         '</div>'
@@ -762,7 +735,6 @@ if st.session_state.scan_done and st.session_state.scan_results:
     )
 
     # ── Leaderboard: หนึ่งแถวต่อหนึ่งหุ้น + แถบวัดระยะห่างจาก EMA (Extension) ──
-    # เปลี่ยนจากอิง RS → อิง Extension ตามที่ปรับ 30 ก.ค. 2026 ให้ตรงกับลำดับ Top N
     max_ext_bar = float(df_result["Extension (%)"].max())
     if max_ext_bar <= 0:
         max_ext_bar = 1.0
@@ -771,7 +743,6 @@ if st.session_state.scan_done and st.session_state.scan_results:
     for rank, (_, row) in enumerate(df_result.iterrows(), start=1):
         sym = row["Symbol"]
         sym_display = sym.replace(".BK", "") if sym.endswith(".BK") else sym
-        rs = float(row["RS (%)"])
         ext = float(row["Extension (%)"])
 
         bar_pct = max(2.0, min(100.0, ext / max_ext_bar * 100))
@@ -799,7 +770,6 @@ if st.session_state.scan_done and st.session_state.scan_results:
             f'<span class="ext-chip {ext_class}">{ext:+.1f}% จาก EMA</span>'
             f'</div>'
             f'<div class="r-bar-wrap"><div class="r-bar" style="width:{bar_pct:.1f}%"></div></div>'
-            f'<div class="r-rs">{rs:+.1f}%</div>'
             f'<div class="r-go">↗</div>'
             f'</a>'
         )
