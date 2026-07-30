@@ -9,10 +9,8 @@ Momentum นำตลาด Scanner — Streamlit App v2.1
   4. EMA50 > EMA200
   5. ราคายืดจาก EMA20 ไม่เกิน X%  →  (Close - EMA20) / EMA20 <= X%
   6. RS = (Close ล่าสุด - Close N แท่งก่อน) / Close N แท่งก่อน × 100
-  7. เลือก Top N ที่ RS สูงสุด
-
-หมายเหตุ: เคยลองสลับไปเรียงด้วย Extension แทน (30 ก.ค. 2026) แล้วลองตัด RS
-         ออกทั้งหมด แต่กลับมาใช้ RS เป็นตัวจัดอันดับหลักเหมือนเดิมแล้ว
+     (คำนวณไว้โชว์เป็นข้อมูลประกอบเท่านั้น — ไม่ได้ใช้จัดอันดับ Top N แล้ว)
+  7. เลือก Top N ที่ยืดจาก EMA เร็ว (Extension) มากที่สุด
 
 สิ่งที่จงใจ "ไม่ทำ" (อย่าเพิ่มกลับเข้ามาโดยไม่ทดสอบ):
   - ไม่ใช้ ThreadPoolExecutor — yfinance ไม่ thread-safe บน Streamlit Cloud (segfault)
@@ -51,8 +49,8 @@ Momentum นำตลาด Scanner — Streamlit App v2.1
 ──────────────────────────────────────────────────────────────
 บันทึกสาเหตุ: ทำไมต้องตัดแท่งที่ยังไม่ปิดตลาดทิ้ง  (30 ก.ค. 2026)
 ──────────────────────────────────────────────────────────────
-อาการ: กดปุ่ม Scan 2 ครั้งห่างกันไม่กี่นาทีตอนตลาดเปิดอยู่ ได้ Close/Extension
-      ไม่ตรงกัน ทั้งที่เป็นสัญลักษณ์เดียวกันและวันเดียวกัน
+อาการ: กดปุ่ม Scan 2 ครั้งห่างกันไม่กี่นาทีตอนตลาดเปิดอยู่ ได้ Close/RS/
+      Extension ไม่ตรงกัน ทั้งที่เป็นสัญลักษณ์เดียวกันและวันเดียวกัน
 
 สาเหตุ: yf.download(interval="1d") ระหว่างตลาดเปิด จะส่งแท่ง "วันนี้" มาด้วย
        โดย Close ของแท่งนั้นคือราคาล่าสุด ณ ขณะนั้น ไม่ใช่ราคาปิดจริง
@@ -492,15 +490,18 @@ with st.sidebar:
         help="ยิ่งน้อย = จับได้ Early มาก (ยังไม่วิ่งไปไกล)"
     )
 
-    st.markdown("**เงื่อนไขที่ 6-7 — จัดอันดับด้วย Relative Strength**")
+    st.markdown("**เงื่อนไขที่ 6 — คำนวณ Relative Strength (ข้อมูลประกอบ)**")
     rs_bars = st.number_input(
         "นับ RS ย้อนหลังกี่ bars",
         min_value=5, max_value=60, value=20, step=5,
-        help="20 bars = ~1 เดือน"
+        help="20 bars = ~1 เดือน — ใช้แสดงผลประกอบเท่านั้น ไม่ได้ใช้จัดอันดับ Top N แล้ว"
     )
+
+    st.markdown("**เงื่อนไขที่ 7 — จัดอันดับด้วยระยะห่างจาก EMA (Extension)**")
     top_n = st.number_input(
-        "แสดง Top N ตัวที่ RS สูงสุด",
-        min_value=5, max_value=100, value=20, step=5
+        "แสดง Top N ตัวที่ยืดจาก EMA เร็วมากที่สุด",
+        min_value=5, max_value=100, value=20, step=5,
+        help="เรียงจากตัวที่ไกลเส้น EMA เร็วที่สุดก่อน (ต้องผ่านเงื่อนไข 1-6 เดิมทุกข้อ)"
     )
 
     st.divider()
@@ -715,8 +716,10 @@ if st.session_state.scan_done and st.session_state.scan_results:
         unsafe_allow_html=True,
     )
 
-    # ── เงื่อนไขที่ 7: เรียงตาม RS มากไปน้อย เอา Top N ──
-    df_result = df_all.sort_values("RS (%)", ascending=False).head(int(top_n))
+    # ── เงื่อนไขที่ 7: เรียงตาม Extension มากไปน้อย (ไกลเส้น EMA ที่สุดก่อน) เอา Top N ──
+    # เปลี่ยนจาก RS → Extension (%) ตามที่ปรับ 30 ก.ค. 2026
+    # เงื่อนไขกรอง 1-6 ยังเหมือนเดิมทุกอย่าง แค่สลับตัวที่ใช้ "เรียง" ตอนเลือก Top N
+    df_result = df_all.sort_values("Extension (%)", ascending=False).head(int(top_n))
 
     avg_rs = df_all["RS (%)"].mean()
     avg_ext = df_all["Extension (%)"].mean()
@@ -752,16 +755,17 @@ if st.session_state.scan_done and st.session_state.scan_results:
 
     st.markdown(
         f'<div class="board-head">'
-        f'<span>Top {len(df_result)} · เรียงตาม RS</span>'
-        f'<span class="board-hint">ความยาวแถบ = พลังโมเมนตัมเทียบกับผู้นำ</span>'
+        f'<span>Top {len(df_result)} · เรียงตาม Extension (ไกล EMA ที่สุดก่อน)</span>'
+        f'<span class="board-hint">ความยาวแถบ = ระยะห่างจาก EMA เทียบกับผู้นำ</span>'
         f'</div>',
         unsafe_allow_html=True,
     )
 
-    # ── Leaderboard: หนึ่งแถวต่อหนึ่งหุ้น + แถบวัดพลัง RS ──
-    max_rs = float(df_result["RS (%)"].max())
-    if max_rs <= 0:
-        max_rs = 1.0
+    # ── Leaderboard: หนึ่งแถวต่อหนึ่งหุ้น + แถบวัดระยะห่างจาก EMA (Extension) ──
+    # เปลี่ยนจากอิง RS → อิง Extension ตามที่ปรับ 30 ก.ค. 2026 ให้ตรงกับลำดับ Top N
+    max_ext_bar = float(df_result["Extension (%)"].max())
+    if max_ext_bar <= 0:
+        max_ext_bar = 1.0
 
     rows_html = []
     for rank, (_, row) in enumerate(df_result.iterrows(), start=1):
@@ -770,7 +774,7 @@ if st.session_state.scan_done and st.session_state.scan_results:
         rs = float(row["RS (%)"])
         ext = float(row["Extension (%)"])
 
-        bar_pct = max(2.0, min(100.0, rs / max_rs * 100))
+        bar_pct = max(2.0, min(100.0, ext / max_ext_bar * 100))
 
         # ยิ่งใกล้เพดาน extension ยิ่งเตือน (ไล่ราคามาเยอะแล้ว)
         ext_ratio = ext / float(max_extension_pct) if max_extension_pct else 0
